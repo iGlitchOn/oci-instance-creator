@@ -1,4 +1,4 @@
-name: Deploy OCI Instance Creator to Docker
+name: Deploy OCI Instance Creator to Docker and OCI
 on:
   push:
     branches:
@@ -6,26 +6,53 @@ on:
     tags:
       - '*'
   pull_request:
+
 jobs:
   dist:
-    name: Deploy to Container Registry
+    name: Build, Push and Deploy
     runs-on: ubuntu-latest
     steps:
+      # 1. Preparar el entorno
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      - name: Login to Container Registry
-        uses: docker/login-action@v1
+        uses: docker/setup-buildx-action@v3
+
+      # 2. Login en Docker Hub (Nombres de secrets corregidos según tu captura)
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. Construir y subir la imagen
       - name: Build and push image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: mowirth/${{ github.event.repository.name }}:latest
-          
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+
+      # 4. Configurar OCI CLI para despliegue
+      - name: Setup OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1.3.2
+        with:
+          user: ${{ secrets.OCI_USER_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          region: us-sanjose-1 # Ajustado según tu OCI_AVAILABILITY_DOMAIN
+          api_key: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+
+      # 5. Desplegar / Actualizar instancia en Oracle Cloud
+      # El comando exacto depende de si usas Container Instances o Instance Pools
+      - name: Restart OCI Container Instance
+        run: |
+          # Reinicia la instancia para que descargue la versión 'latest' que acabas de subir
+          # Reemplaza <TU_CONTAINER_INSTANCE_OCID> por el OCID real o un secret adicional
+          oci container-instances container-instance restart \
+            --container-instance-id ${{ secrets.OCI_CONTAINER_INSTANCE_ID }} \
+            --wait-for-state SUCCEEDED
