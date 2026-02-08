@@ -1,10 +1,8 @@
 name: Deploy OCI Instance Creator to Docker and OCI
 on:
   push:
-    branches:
-      - '*'
-    tags:
-      - '*'
+    branches: ['*']
+    tags: ['*']
   pull_request:
 
 jobs:
@@ -12,7 +10,6 @@ jobs:
     name: Build, Push and Deploy
     runs-on: ubuntu-latest
     steps:
-      # 1. Preparar el entorno
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -22,14 +19,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 2. Login en Docker Hub (Nombres de secrets corregidos según tu captura)
+      # Login con tus nombres de secrets actuales
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 3. Construir y subir la imagen
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
@@ -37,22 +33,19 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
 
-      # 4. Configurar OCI CLI para despliegue
-      - name: Setup OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1.3.2
+      # --- DESPLIEGUE USANDO LA ACCIÓN OFICIAL ---
+      - name: Restart OCI Instance
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
-          user: ${{ secrets.OCI_USER_OCID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          region: us-sanjose-1 # Ajustado según tu OCI_AVAILABILITY_DOMAIN
-          api_key: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
-
-      # 5. Desplegar / Actualizar instancia en Oracle Cloud
-      # El comando exacto depende de si usas Container Instances o Instance Pools
-      - name: Restart OCI Container Instance
-        run: |
-          # Reinicia la instancia para que descargue la versión 'latest' que acabas de subir
-          # Reemplaza <TU_CONTAINER_INSTANCE_OCID> por el OCID real o un secret adicional
-          oci container-instances container-instance restart \
-            --container-instance-id ${{ secrets.OCI_CONTAINER_INSTANCE_ID }} \
-            --wait-for-state SUCCEEDED
+          # El comando se ejecuta después de configurar la CLI automáticamente
+          command: |
+            container-instances container-instance restart \
+              --container-instance-id ${{ secrets.OCI_CONTAINER_INSTANCE_ID }} \
+              --wait-for-state SUCCEEDED
+        env:
+          # Estas variables son requeridas por la acción para la autenticación
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
