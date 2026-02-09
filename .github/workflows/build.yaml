@@ -2,7 +2,6 @@ name: Deploy OCI Instance Creator to Docker and OCI
 on:
   push:
     branches: ['*']
-    tags: ['*']
   pull_request:
 
 jobs:
@@ -19,13 +18,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Login con tus nombres de secrets actuales
+      # 1. Login en Docker Hub usando SECRETS
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # 2. Build y Push
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
@@ -33,17 +33,21 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
 
-      # --- DESPLIEGUE USANDO LA ACCIÓN OFICIAL ---
-      - name: Restart OCI Instance
+      # 3. Despliegue en OCI usando SECRETS para auth y VARS para config
+      - name: Launch OCI Instance
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
-          # El comando se ejecuta después de configurar la CLI automáticamente
           command: |
-            container-instances container-instance restart \
-              --container-instance-id ${{ secrets.OCI_CONTAINER_INSTANCE_ID }} \
-              --wait-for-state SUCCEEDED
+            compute instance launch \
+              --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
+              --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config '{"ocpus": ${{ vars.OCI_OCPUS }}, "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}}' \
+              --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
+              --image-id "${{ vars.OCI_IMAGE_ID }}" \
+              --display-name "OCI-Instance-from-Github" \
+              --assign-public-ip true
         env:
-          # Estas variables son requeridas por la acción para la autenticación
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
           OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
