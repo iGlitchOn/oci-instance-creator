@@ -29,7 +29,47 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
       
-      - name: Verify OCI Configuration
+      # ============================================
+      # DIAGNÓSTICO COMPLETO DE OCI
+      # ============================================
+      
+      - name: "1️⃣ Test OCI Authentication"
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: iam region list
+          silent: false
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
+      
+      - name: "2️⃣ Verify User Identity"
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: iam user get --user-id "${{ secrets.OCI_USER_OCID }}"
+          silent: false
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
+      
+      - name: "3️⃣ List Available Compartments"
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: iam compartment list --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" --all
+          silent: false
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
+      
+      - name: "4️⃣ List Availability Domains"
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
           command: iam availability-domain list --compartment-id "${{ secrets.OCI_TENANCY_OCID }}"
@@ -41,7 +81,24 @@ jobs:
           OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
           OCI_CLI_REGION: us-sanjose-1
       
-      - name: Verify Subnet Access
+      - name: "5️⃣ List Available ARM Images in Region"
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: >-
+            compute image list
+            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}"
+            --operating-system "Oracle Linux"
+            --shape "VM.Standard.A1.Flex"
+            --limit 5
+          silent: false
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
+      
+      - name: "6️⃣ Verify Subnet Access"
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
           command: network subnet get --subnet-id "${{ vars.OCI_SUBNET_ID }}"
@@ -53,17 +110,11 @@ jobs:
           OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
           OCI_CLI_REGION: us-sanjose-1
       
-      - name: Verify Image Access
-        uses: oracle-actions/run-oci-cli-command@v1.1.1
-        with:
-          command: compute image get --image-id "${{ vars.OCI_IMAGE_ID }}"
-          silent: false
-        env:
-          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
-          OCI_CLI_REGION: us-sanjose-1
+      - name: "7️⃣ Get Correct Image ID from Step 5"
+        run: |
+          echo "⚠️ IMPORTANTE: Revisa el paso 5️⃣ para obtener un IMAGE ID válido"
+          echo "El IMAGE ID actual puede estar incorrecto o no disponible"
+          echo "IMAGE ID configurado: ${{ vars.OCI_IMAGE_ID }}"
       
       - name: Create shape config file
         run: |
@@ -76,7 +127,7 @@ jobs:
           echo "Shape config contents:"
           cat shape-config.json
       
-      - name: Launch OCI Instance
+      - name: "8️⃣ Launch OCI Instance"
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
           command: >-
