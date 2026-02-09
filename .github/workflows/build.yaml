@@ -32,17 +32,17 @@ jobs:
       - name: Launch OCI Instance
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
-          command: |
-            compute instance launch \
-              --availability-domain "$OCI_AD" \
-              --compartment-id "$OCI_COMPARTMENT" \
-              --shape "VM.Standard.A1.Flex" \
-              --shape-config '{"ocpus": '"$OCI_OCPUS"', "memoryInGBs": '"$OCI_MEMORY"'}' \
-              --subnet-id "$OCI_SUBNET" \
-              --image-id "$OCI_IMAGE" \
-              --display-name "Github-Deploy-${{ github.run_number }}" \
-              --assign-public-ip true \
-              --wait-for-state RUNNING
+          command: >-
+            compute instance launch
+            --availability-domain "$OCI_AD"
+            --compartment-id "$OCI_COMPARTMENT"
+            --shape "VM.Standard.A1.Flex"
+            --shape-config "{\"ocpus\":$OCI_OCPUS,\"memoryInGBs\":$OCI_MEMORY}"
+            --subnet-id "$OCI_SUBNET"
+            --image-id "$OCI_IMAGE"
+            --display-name "Github-Deploy-${{ github.run_number }}"
+            --assign-public-ip true
+            --wait-for-state RUNNING
           silent: false
         env:
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
