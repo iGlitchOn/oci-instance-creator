@@ -29,6 +29,17 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
       
+      - name: Create shape config file
+        run: |
+          cat > shape-config.json << 'EOF'
+          {
+            "ocpus": ${{ vars.OCI_OCPUS }},
+            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
+          }
+          EOF
+          echo "Shape config contents:"
+          cat shape-config.json
+      
       - name: Launch OCI Instance
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
@@ -37,7 +48,7 @@ jobs:
             --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}"
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}"
             --shape "VM.Standard.A1.Flex"
-            --shape-config '{"ocpus":${{ vars.OCI_OCPUS }},"memoryInGBs":${{ vars.OCI_MEMORY_IN_GBS }}}'
+            --shape-config file://shape-config.json
             --subnet-id "${{ vars.OCI_SUBNET_ID }}"
             --image-id "${{ vars.OCI_IMAGE_ID }}"
             --display-name "Github-Deploy-${{ github.run_number }}"
