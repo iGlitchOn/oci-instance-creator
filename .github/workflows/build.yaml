@@ -2,7 +2,6 @@ name: Deploy OCI Instance Creator to Docker and OCI
 on:
   push:
     branches: ['*']
-
 jobs:
   dist:
     name: Build, Push and Deploy
@@ -10,38 +9,48 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+      
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
+      
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+      
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
-
+      
+      - name: Test OCI CLI Connection
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: iam region list
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
+      
       - name: Launch OCI Instance
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         with:
-          # Usamos variables de entorno intermedias para evitar errores de escape en el comando
           command: |
             compute instance launch \
-              --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
-              --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+              --availability-domain "$OCI_AD" \
+              --compartment-id "$OCI_COMPARTMENT" \
               --shape "VM.Standard.A1.Flex" \
-              --shape-config "{\"ocpus\": ${{ vars.OCI_OCPUS }}, \"memoryInGBs\": ${{ vars.OCI_MEMORY_IN_GBS }}}" \
-              --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
-              --image-id "${{ vars.OCI_IMAGE_ID }}" \
+              --shape-config "{\"ocpus\": $OCI_OCPUS, \"memoryInGBs\": $OCI_MEMORY}" \
+              --subnet-id "$OCI_SUBNET" \
+              --image-id "$OCI_IMAGE" \
               --display-name "Github-Deploy-${{ github.run_number }}" \
               --assign-public-ip true \
               --wait-for-state RUNNING
@@ -51,3 +60,9 @@ jobs:
           OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
           OCI_CLI_REGION: us-sanjose-1
+          OCI_AD: ${{ vars.OCI_AVAILABILITY_DOMAIN }}
+          OCI_COMPARTMENT: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_SUBNET: ${{ vars.OCI_SUBNET_ID }}
+          OCI_IMAGE: ${{ vars.OCI_IMAGE_ID }}
+          OCI_OCPUS: ${{ vars.OCI_OCPUS }}
+          OCI_MEMORY: ${{ vars.OCI_MEMORY_IN_GBS }}
