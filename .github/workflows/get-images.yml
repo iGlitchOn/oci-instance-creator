@@ -1,0 +1,26 @@
+name: Get OCI Images
+on:
+  workflow_dispatch:
+
+jobs:
+  get-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List Ubuntu ARM Images
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: >-
+            compute image list
+            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}"
+            --operating-system "Canonical Ubuntu"
+            --operating-system-version "24.04"
+            --limit 5
+            --sort-by TIMECREATED
+            --sort-order DESC
+          silent: false
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
