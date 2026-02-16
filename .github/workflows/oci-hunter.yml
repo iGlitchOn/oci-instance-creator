@@ -1,0 +1,64 @@
+name: OCI Ampere Hunter
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+jobs:
+  hunt:
+    name: Hunt for Ampere Capacity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create shape config file
+        run: |
+          cat > shape-config.json << 'EOF'
+          {
+            "ocpus": ${{ vars.OCI_OCPUS }},
+            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
+          }
+          EOF
+          echo "Shape config:"
+          cat shape-config.json
+
+      - name: 🎯 Launch Ampere Instance 24GB
+        id: launch
+        continue-on-error: true
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        with:
+          command: >-
+            compute instance launch
+            --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}"
+            --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}"
+            --shape "VM.Standard.A1.Flex"
+            --shape-config file://shape-config.json
+            --subnet-id "${{ vars.OCI_SUBNET_ID }}"
+            --image-id "${{ vars.OCI_IMAGE_ID }}"
+            --display-name "Ampere-24GB-${{ github.run_number }}"
+            --assign-public-ip true
+            --wait-for-state RUNNING
+          silent: false
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+          OCI_CLI_REGION: us-sanjose-1
+
+      - name: ✅ Instancia creada - Desactivar hunter
+        if: steps.launch.outcome == 'success'
+        run: |
+          echo "🎉 Instancia Ampere 24GB creada exitosamente!"
+          curl -X PUT \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
+          echo "🛑 Hunter desactivado. Ya tienes tu instancia Ampere!"
+
+      - name: ❌ Sin capacidad - Reintentando en 5 minutos
+        if: steps.launch.outcome == 'failure'
+        run: |
+          echo "⏳ Out of capacity. Reintentando en 5 minutos..."
+          exit 0
