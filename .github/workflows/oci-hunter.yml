@@ -20,8 +20,6 @@ jobs:
             "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
           }
           EOF
-          echo "Shape config:"
-          cat shape-config.json
 
       - name: 🎯 Launch Ampere Instance 24GB
         id: launch
