@@ -3,7 +3,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
-# Intento de activacion del cron
 
 jobs:
   hunt:
