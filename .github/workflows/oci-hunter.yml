@@ -1,62 +1,75 @@
-name: OCI Ampere Hunter
+name: OCI Ampere Hunter (ULTRA RÁPIDO - 30s)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
-
+    - cron: '* * * * *'  # Cada minuto
 jobs:
   hunt:
-    name: Hunt for Ampere Capacity
+    name: Hunt Ampere (30s interval)
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create shape config file
+      - name: 🚀 Hunter ultra rápido (intento cada 30s)
         run: |
-          cat > shape-config.json << 'EOF'
-          {
-            "ocpus": ${{ vars.OCI_OCPUS }},
-            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
-          }
-          EOF
-
-      - name: 🎯 Launch Ampere Instance 24GB
-        id: launch
-        continue-on-error: true
-        uses: oracle-actions/run-oci-cli-command@v1.1.1
-        with:
-          command: >-
-            compute instance launch
-            --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}"
-            --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}"
-            --shape "VM.Standard.A1.Flex"
-            --shape-config file://shape-config.json
-            --subnet-id "${{ vars.OCI_SUBNET_ID }}"
-            --image-id "${{ vars.OCI_IMAGE_ID }}"
-            --display-name "Ampere-24GB-${{ github.run_number }}"
-            --assign-public-ip true
-            --wait-for-state RUNNING
-          silent: false
+          echo "🚀 HUNTER ULTRA RÁPIDO ACTIVADO"
+          echo "⚡ Intervalo: 30 segundos entre intentos"
+          echo ""
+          
+          attempt=1
+          max_attempts=100  # 100 intentos = ~50 minutos
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🎯 Intento #$attempt - $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Crear shape config
+            echo "{\"ocpus\": ${{ vars.OCI_OCPUS }}, \"memoryInGBs\": ${{ vars.OCI_MEMORY_IN_GBS }}}" > shape.json
+            
+            # Intentar crear (sin --wait-for-state para que sea más rápido)
+            if oci compute instance launch \
+              --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
+              --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config file://shape.json \
+              --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
+              --image-id "${{ vars.OCI_IMAGE_ID }}" \
+              --display-name "Ampere-${GITHUB_RUN_NUMBER}" \
+              --assign-public-ip true \
+              2>&1 | grep -q "OutOfCapacity\|LimitExceeded"; then
+              
+              echo "❌ Sin capacidad disponible"
+              
+            else
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "✅✅✅ ¡INSTANCIA CREADA! ✅✅✅"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              
+              # Desactivar workflow
+              curl -s -X PUT \
+                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable" > /dev/null
+              
+              echo "🛑 Workflow desactivado"
+              exit 0
+            fi
+            
+            # Esperar 30 segundos antes del siguiente intento
+            if [ $attempt -lt $max_attempts ]; then
+              echo "⏳ Esperando 30 segundos..."
+              sleep 30
+            fi
+            
+            attempt=$((attempt + 1))
+          done
+          
+          echo "⏱️ Límite de tiempo alcanzado. El cron iniciará otro job en 1 minuto."
+          exit 0
         env:
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
           OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
           OCI_CLI_REGION: us-sanjose-1
-
-      - name: ✅ Instancia creada - Desactivar hunter
-        if: steps.launch.outcome == 'success'
-        run: |
-          echo "🎉 Instancia Ampere 24GB creada exitosamente!"
-          curl -X PUT \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
-          echo "🛑 Hunter desactivado. Ya tienes tu instancia Ampere!"
-
-      - name: ❌ Sin capacidad - Reintentando en 5 minutos
-        if: steps.launch.outcome == 'failure'
-        run: |
-          echo "⏳ Out of capacity. Reintentando en 5 minutos..."
-          exit 0
