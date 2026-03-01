@@ -1,72 +1,99 @@
-name: OCI Ampere Hunter (ULTRA RÁPIDO - 30s)
+name: OCI Ampere Hunter (3 INTENTOS/MIN)
 on:
   workflow_dispatch:
   schedule:
     - cron: '* * * * *'  # Cada minuto
+
+# EVITA EJECUCIONES PARALELAS
+concurrency:
+  group: oci-hunter-single
+  cancel-in-progress: false
+
 jobs:
   hunt:
-    name: Hunt Ampere (30s interval)
+    name: 3 Intentos Rápidos
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 1  # Máximo 1 minuto
+    
     steps:
-      - name: 🚀 Hunter ultra rápido (intento cada 30s)
+      - name: 🚀 3 intentos en 45 segundos
         run: |
-          echo "🚀 HUNTER ULTRA RÁPIDO ACTIVADO"
-          echo "⚡ Intervalo: 30 segundos entre intentos"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🚀 HUNTER RÁPIDO - 3 intentos/minuto"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           
-          attempt=1
-          max_attempts=100  # 100 intentos = ~50 minutos
+          SUCCESS=false
           
-          while [ $attempt -le $max_attempts ]; do
+          # Crear shape config una sola vez
+          cat > shape.json << EOF
+          {
+            "ocpus": ${{ vars.OCI_OCPUS }},
+            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
+          }
+          EOF
+          
+          # Hacer 3 intentos rápidos
+          for i in 1 2 3; do
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🎯 Intento #$attempt - $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "🎯 Intento $i/3 - $(date '+%H:%M:%S')"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Crear shape config
-            echo "{\"ocpus\": ${{ vars.OCI_OCPUS }}, \"memoryInGBs\": ${{ vars.OCI_MEMORY_IN_GBS }}}" > shape.json
-            
-            # Intentar crear (sin --wait-for-state para que sea más rápido)
-            if oci compute instance launch \
+            # Intentar crear (timeout de 10 segundos)
+            if timeout 10s oci compute instance launch \
               --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
               --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
               --shape "VM.Standard.A1.Flex" \
               --shape-config file://shape.json \
               --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
               --image-id "${{ vars.OCI_IMAGE_ID }}" \
-              --display-name "Ampere-${GITHUB_RUN_NUMBER}" \
+              --display-name "Ampere-Run${{ github.run_number }}-Try$i" \
               --assign-public-ip true \
-              2>&1 | grep -q "OutOfCapacity\|LimitExceeded"; then
+              2>&1 | tee output.log; then
               
-              echo "❌ Sin capacidad disponible"
-              
-            else
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "✅✅✅ ¡INSTANCIA CREADA! ✅✅✅"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              
-              # Desactivar workflow
-              curl -s -X PUT \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable" > /dev/null
-              
-              echo "🛑 Workflow desactivado"
-              exit 0
+              # Verificar si realmente se creó
+              if grep -q "\"lifecycle-state\":" output.log && \
+                 ! grep -q "OutOfCapacity\|LimitExceeded\|InternalError" output.log; then
+                
+                echo ""
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "✅✅✅ ¡INSTANCIA CREADA! ✅✅✅"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                
+                SUCCESS=true
+                break
+              fi
             fi
             
-            # Esperar 30 segundos antes del siguiente intento
-            if [ $attempt -lt $max_attempts ]; then
-              echo "⏳ Esperando 30 segundos..."
-              sleep 30
-            fi
+            echo "❌ Fallo: Sin capacidad"
             
-            attempt=$((attempt + 1))
+            # Esperar 15 segundos antes del siguiente intento (excepto en el último)
+            if [ $i -lt 3 ]; then
+              echo "⏳ Esperando 15s..."
+              sleep 15
+            fi
           done
           
-          echo "⏱️ Límite de tiempo alcanzado. El cron iniciará otro job en 1 minuto."
-          exit 0
+          # Si tuvo éxito, desactivar workflow
+          if [ "$SUCCESS" = true ]; then
+            echo "🛑 Desactivando hunter..."
+            
+            curl -s -X PUT \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable" || true
+            
+            echo "✅ Hunter desactivado"
+            exit 0
+          else
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "⏳ Todos los intentos fallaron"
+            echo "🔄 Siguiente ronda en 60 segundos"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0
+          fi
         env:
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
           OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
