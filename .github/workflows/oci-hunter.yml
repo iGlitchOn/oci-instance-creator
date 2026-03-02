@@ -1,4 +1,4 @@
-name: OCI Ampere Hunter (MEJORADO)
+name: OCI Ampere Hunter
 on:
   workflow_dispatch:
   schedule:
@@ -16,84 +16,43 @@ jobs:
     
     steps:
       - name: 🎯 Intentar crear instancia
-        run: |
-          echo "🚀 Intento: $(date '+%H:%M:%S')"
-          
-          cat > shape.json << EOF
-          {
-            "ocpus": ${{ vars.OCI_OCPUS }},
-            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
-          }
-          EOF
-          
-          # Intentar crear y capturar TODO el output
-          set +e  # No fallar si el comando falla
-          oci compute instance launch \
-            --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
-            --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config file://shape.json \
-            --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
-            --image-id "${{ vars.OCI_IMAGE_ID }}" \
-            --display-name "Ampere-${GITHUB_RUN_NUMBER}" \
-            --assign-public-ip true \
-            2>&1 | tee output.log
-          
-          EXIT_CODE=${PIPESTATUS[0]}
-          set -e
-          
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📊 ANÁLISIS DEL RESULTADO:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-          # Verificar errores conocidos de falta de capacidad
-          if grep -qi "OutOfHostCapacity\|OutOfCapacity\|LimitExceeded\|InternalError\|TooManyRequests" output.log; then
-            echo "❌ SIN CAPACIDAD - Confirmado"
-            echo "⏳ Reintentando en 60 segundos..."
-            exit 0
-          fi
-          
-          # Verificar si realmente se creó la instancia
-          if grep -q "\"id\": \"ocid1.instance" output.log && \
-             grep -q "\"lifecycle-state\":" output.log; then
-            
-            # Extraer el estado
-            STATE=$(grep -o "\"lifecycle-state\": \"[^\"]*\"" output.log | head -1 | cut -d'"' -f4)
-            INSTANCE_ID=$(grep -o "\"id\": \"ocid1.instance[^\"]*\"" output.log | head -1 | cut -d'"' -f4)
-            
-            echo "✅ INSTANCIA ENCONTRADA:"
-            echo "   ID: $INSTANCE_ID"
-            echo "   Estado: $STATE"
-            
-            if [ "$STATE" = "PROVISIONING" ] || [ "$STATE" = "STARTING" ] || [ "$STATE" = "RUNNING" ]; then
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "🎉🎉🎉 ¡ÉXITO CONFIRMADO! 🎉🎉🎉"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              
-              # Desactivar workflow
-              echo "🛑 Desactivando hunter..."
-              curl -X PUT \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
-              
-              echo "✅ Workflow desactivado correctamente"
-              exit 0
-            else
-              echo "⚠️ Estado inesperado: $STATE"
-              echo "🔄 Continuando intentos..."
-              exit 0
-            fi
-          else
-            echo "❌ No se encontró instancia creada"
-            echo "⏳ Reintentando en 60 segundos..."
-            exit 0
-          fi
+        uses: oracle-actions/run-oci-cli-command@v1.1.1
+        id: create
+        continue-on-error: true
+        with:
+          command: |
+            compute instance launch \
+              --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
+              --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config '{"ocpus": ${{ vars.OCI_OCPUS }}, "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}}' \
+              --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
+              --image-id "${{ vars.OCI_IMAGE_ID }}" \
+              --display-name "Ampere-${{ github.run_number }}" \
+              --assign-public-ip true
+          silent: false
         env:
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
           OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
           OCI_CLI_REGION: us-sanjose-1
+      
+      - name: 📊 Analizar resultado
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ "${{ steps.create.outcome }}" = "success" ]; then
+            echo "✅ ¡INSTANCIA CREADA!"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Desactivar workflow
+            curl -X PUT \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
+            
+            echo "🛑 Workflow desactivado"
+          else
+            echo "❌ Sin capacidad - Reintentando en 60s"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          fi
