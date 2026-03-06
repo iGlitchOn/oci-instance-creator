@@ -15,6 +15,16 @@ jobs:
     timeout-minutes: 1
     
     steps:
+      - name: 📝 Crear shape config
+        run: |
+          cat > /tmp/shape.json << 'EOF'
+          {
+            "ocpus": ${{ vars.OCI_OCPUS }},
+            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
+          }
+          EOF
+          cat /tmp/shape.json
+      
       - name: 🎯 Intentar crear instancia
         uses: oracle-actions/run-oci-cli-command@v1.1.1
         id: create
@@ -25,7 +35,7 @@ jobs:
               --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
               --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
               --shape "VM.Standard.A1.Flex" \
-              --shape-config '{"ocpus": ${{ vars.OCI_OCPUS }}, "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}}' \
+              --shape-config file:///tmp/shape.json \
               --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
               --image-id "${{ vars.OCI_IMAGE_ID }}" \
               --display-name "Ampere-${{ github.run_number }}" \
@@ -38,21 +48,22 @@ jobs:
           OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
           OCI_CLI_REGION: us-sanjose-1
       
-      - name: 📊 Analizar resultado
+      - name: 📊 Resultado
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           if [ "${{ steps.create.outcome }}" = "success" ]; then
-            echo "✅ ¡INSTANCIA CREADA!"
+            echo "✅ ¡INSTANCIA CREADA EXITOSAMENTE!"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Desactivar workflow
-            curl -X PUT \
+            curl -s -X PUT \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
             
             echo "🛑 Workflow desactivado"
           else
-            echo "❌ Sin capacidad - Reintentando en 60s"
+            echo "❌ FALLO - Mensaje de error arriba ⬆️"
+            echo "⏳ Siguiente intento en 60 segundos"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           fi
