@@ -2,7 +2,7 @@ name: OCI Ampere Hunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: '* * * * *'  # Cada minuto
+    - cron: '*/5 * * * *'  # Cada 5 minutos
 
 concurrency:
   group: oci-hunter
@@ -10,75 +10,56 @@ concurrency:
 
 jobs:
   hunt:
-    name: Hunt Ampere
+    name: Hunt
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/oracle/oci-cli:latest
-    timeout-minutes: 1
     
     steps:
-      - name: 🎯 Intentar crear instancia
+      - name: Intentar crear instancia
         run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🚀 Intento: $(date '+%H:%M:%S')"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🚀 $(date '+%H:%M:%S')"
           
-          # Crear shape config
-          cat > /tmp/shape.json << 'EOF'
+          # Instalar OCI CLI
+          pip install -q oci-cli
+          
+          # Shape config
+          cat > shape.json << 'EOF'
           {
             "ocpus": ${{ vars.OCI_OCPUS }},
             "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
           }
           EOF
           
-          # Intentar crear instancia
-          if oci compute instance launch \
+          # Intentar crear
+          oci compute instance launch \
             --availability-domain "${{ vars.OCI_AVAILABILITY_DOMAIN }}" \
             --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
-            --shape-config file:///tmp/shape.json \
+            --shape-config file://shape.json \
             --subnet-id "${{ vars.OCI_SUBNET_ID }}" \
             --image-id "${{ vars.OCI_IMAGE_ID }}" \
             --display-name "Ampere-${{ github.run_number }}" \
-            --assign-public-ip true \
-            2>&1 | tee /tmp/output.log; then
-            
-            # Verificar si realmente se creó
-            if grep -q '"id": "ocid1.instance' /tmp/output.log; then
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "🎉 ¡INSTANCIA CREADA!"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              
-              # Desactivar workflow
-              curl -s -X PUT \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
-              
-              echo "🛑 Workflow desactivado"
-              exit 0
-            fi
+            --assign-public-ip true 2>&1 | tee out.log
+          
+          # Verificar éxito
+          if grep -q '"id": "ocid1.instance' out.log; then
+            echo "✅ CREADA"
+            curl -s -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/oci-hunter.yml/disable"
+            exit 0
           fi
           
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          # Mostrar error
           echo "❌ ERROR:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-          # Mostrar mensaje de error
-          if grep -qi "OutOfHostCapacity\|Out of host capacity" /tmp/output.log; then
-            echo "💥 Out of host capacity"
-          elif grep -qi "OutOfCapacity\|Out of capacity" /tmp/output.log; then
-            echo "💥 Out of capacity"
-          elif grep -qi "LimitExceeded" /tmp/output.log; then
-            echo "💥 Service limit exceeded"
+          if grep -qi "OutOfHostCapacity" out.log; then
+            echo "Out of host capacity"
+          elif grep -qi "OutOfCapacity" out.log; then
+            echo "Out of capacity"
+          elif grep -qi "LimitExceeded" out.log; then
+            echo "Limit exceeded"
           else
-            echo "💥 Error:"
-            grep -i "error\|message\|code" /tmp/output.log | head -5 || echo "Ver logs arriba"
+            grep '"message"' out.log || echo "Ver logs arriba"
           fi
           
-          echo "⏳ Reintento en 60s"
           exit 0
         env:
           OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
