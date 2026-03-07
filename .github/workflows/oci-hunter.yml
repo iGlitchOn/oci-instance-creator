@@ -2,7 +2,7 @@ name: OCI Ampere Hunter
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'  # Cada 5 minutos
+    - cron: '* * * * *'  # Cada minuto
 
 concurrency:
   group: oci-hunter
@@ -14,20 +14,21 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Setup OCI CLI
+        uses: oracle-actions/configure-oci-cli@v1.0.1
+        with:
+          user: ${{ secrets.OCI_USER_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          region: us-sanjose-1
+          api_key: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
+      
       - name: Intentar crear instancia
         run: |
           echo "🚀 $(date '+%H:%M:%S')"
           
-          # Instalar OCI CLI
-          pip install -q oci-cli
-          
           # Shape config
-          cat > shape.json << 'EOF'
-          {
-            "ocpus": ${{ vars.OCI_OCPUS }},
-            "memoryInGBs": ${{ vars.OCI_MEMORY_IN_GBS }}
-          }
-          EOF
+          echo '{"ocpus":${{ vars.OCI_OCPUS }},"memoryInGBs":${{ vars.OCI_MEMORY_IN_GBS }}}' > shape.json
           
           # Intentar crear
           oci compute instance launch \
@@ -57,13 +58,6 @@ jobs:
           elif grep -qi "LimitExceeded" out.log; then
             echo "Limit exceeded"
           else
-            grep '"message"' out.log || echo "Ver logs arriba"
+            grep -i '"message"' out.log | head -3 || echo "Ver logs arriba"
           fi
-          
-          exit 0
-        env:
-          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY_CONTENTS }}
-          OCI_CLI_REGION: us-sanjose-1
+        continue-on-error: true
