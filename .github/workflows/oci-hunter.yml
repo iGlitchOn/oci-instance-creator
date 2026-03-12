@@ -12,10 +12,12 @@ jobs:
   hunt:
     name: Hunt
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     
     steps:
       - name: Cache OCI CLI
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local
           key: oci-cli-${{ runner.os }}
@@ -67,7 +69,10 @@ jobs:
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "❌ ERROR:"
-          if grep -qi "OutOfHostCapacity" out.log; then
+          if grep -qi "timed out\|timeout" out.log; then
+            echo "💥 Connection timeout - Oracle API no respondió a tiempo"
+            echo "   (Esto es temporal, seguirá intentando)"
+          elif grep -qi "OutOfHostCapacity" out.log; then
             echo "💥 Out of host capacity for VM.Standard.A1.Flex"
           elif grep -qi "OutOfCapacity" out.log; then
             echo "💥 Out of capacity"
