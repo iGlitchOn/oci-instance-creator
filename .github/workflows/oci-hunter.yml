@@ -22,15 +22,14 @@ jobs:
           path: ~/.local
           key: oci-cli-${{ runner.os }}
       
-      - name: Install OCI CLI (solo primera vez)
+      - name: Install OCI CLI
         run: |
           if ! command -v oci &> /dev/null; then
             echo "📦 Instalando OCI CLI..."
             pip install --user oci-cli
           else
-            echo "✅ OCI CLI ya instalado (desde caché)"
+            echo "✅ OCI CLI desde caché"
           fi
-          oci --version
       
       - name: Crear instancia
         run: |
@@ -69,15 +68,21 @@ jobs:
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "❌ ERROR:"
-          if grep -qi "timed out\|timeout" out.log; then
+          if grep -qi "Out of host capacity" out.log; then
+            echo "💥 Out of host capacity - No hay servidores Ampere disponibles"
+            echo "   (Seguirá intentando automáticamente cada minuto)"
+          elif grep -qi "timed out\|timeout" out.log; then
             echo "💥 Connection timeout - Oracle API no respondió a tiempo"
-            echo "   (Esto es temporal, seguirá intentando)"
-          elif grep -qi "OutOfHostCapacity" out.log; then
-            echo "💥 Out of host capacity for VM.Standard.A1.Flex"
+            echo "   (Temporal, seguirá intentando)"
           elif grep -qi "OutOfCapacity" out.log; then
             echo "💥 Out of capacity"
           elif grep -qi "LimitExceeded" out.log; then
-            echo "💥 Service limit exceeded"
+            echo "💥 Service limit exceeded - Has alcanzado tu cuota"
+          elif grep -qi "TooManyRequests" out.log; then
+            echo "💥 Too many requests - Rate limited"
+          elif grep -qi "InternalError\|InternalServerError" out.log; then
+            echo "💥 Oracle Internal Error (500)"
+            grep -i '"message"' out.log | head -1
           else
             echo "💥 Mensaje:"
             grep -i '"message"' out.log | head -3 || echo "Ver logs completos arriba ⬆️"
